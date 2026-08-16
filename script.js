@@ -7,9 +7,11 @@
 // ============================================================
 
 const PLAYLIST_ID = "PLWy_M1Gs9zY8";
-const SITE_ORIGIN = "https://rohangoenka6.github.io";
+const START_VIDEO_ID = "LUgpPmj6nR8"; // fallback if the playlist is slow to load
 
-// ---------- Elements ----------
+// ============================================================
+// Elements
+// ============================================================
 const els = {
   songTitle: document.getElementById("songTitle"),
   songArtist: document.getElementById("songArtist"),
@@ -33,22 +35,39 @@ const els = {
   listEmpty: document.getElementById("listEmpty"),
 };
 
-// ---------- State ----------
+// ============================================================
+// State
+// ============================================================
 let player = null;
 let playerReady = false;
 let isPlaying = false;
 let isDraggingProgress = false;
 let playWhenReady = false; // user hit play before the player finished loading
+let playlistResolved = false; // true once we have a song list to work with
 let playlistIds = []; // video IDs in playlist order
+let currentIndex = -1; // index of the song currently selected in the player
 const videoInfoCache = {}; // videoId -> { title, artist }
-let hasPlayedOnce = false; // true once any video successfully starts playing
-let recoveryIndex = 0; // which start index we're currently trying
-const MAX_RECOVERY_ATTEMPTS = 40; // safety net against an all-blocked playlist
+
+// The player only talks to the exact origin that created it.
+// On GitHub Pages this is automatic; the constant is a safe fallback.
+function pageOrigin() {
+  try {
+    const o = window.location.origin;
+    if (o && o !== "null" && /^https?:\/\//.test(o)) return o;
+  } catch (err) {
+    /* ignore */
+  }
+  return "https://rohangoenka6.github.io";
+}
 
 // ============================================================
 // YouTube IFrame API
 // ============================================================
 function onYouTubeIframeAPIReady() {
+  // NOTE: we deliberately do NOT pass listType/list here. Loading the
+  // playlist inside playerVars hits a known YouTube bug where the
+  // playlist fails on first load and getPlaylist() comes back empty.
+  // Instead we cue the playlist after the player is ready (see below).
   player = new YT.Player("ytPlayer", {
     playerVars: {
       autoplay: 0,
@@ -58,9 +77,7 @@ function onYouTubeIframeAPIReady() {
       iv_load_policy: 3,
       playsinline: 1,
       enablejsapi: 1,
-      origin: SITE_ORIGIN,
-      listType: "playlist",
-      list: PLAYLIST_ID,
+      origin: pageOrigin(),
     },
     events: {
       onReady: onPlayerReady,
@@ -98,116 +115,156 @@ function onPlayerReady() {
     /* ignore */
   }
 
-  els.songTitle.textContent = "Loading playlist\u2026";
-  els.songArtist.textContent = "";
+  setTitle("Loading your playlist\u2026", "");
+
+  // Cue the playlist now that the player is ready. This is the reliable
+  // way to get the full video list back from getPlaylist().
+  try {
+    player.cuePlaylist({
+      listType: "playlist",
+      list: PLAYLIST_ID,
+      index: 0,
+    });
+  } catch (err) {
+    /* ignore */
+  }
+
   waitForPlaylist(0);
 }
 
-// The playlist's video list isn't always available the instant the
-// player fires "ready" — poll briefly until it shows up.
+// Poll briefly until the playlist's video list shows up.
 function waitForPlaylist(attempt) {
-  const list = player.getPlaylist ? player.getPlaylist() : null;
-  if (list && list.length) {
-    playlistIds = list;
-    els.songTitle.textContent = "Ready to play";
-    els.songArtist.textContent = playWhenReady ? "" : "Tap play to begin";
-    buildListPanel();
+  const ids = safeGetPlaylist();
+  if (ids.length) {
+    onPlaylistReady(ids);
+    return;
+  }
+  if (attempt >= 60) {
+    // ~30 seconds: give up on the list but still offer the first song.
+    playlistFallback();
+    return;
+  }
+  setTimeout(function () {
+    waitForPlaylist(attempt + 1);
+  }, 500);
+}
+
+function safeGetPlaylist() {
+  try {
+    const list = player.getPlaylist();
+    if (list && list.length) return list.slice();
+  } catch (err) {
+    /* ignore */
+  }
+  return [];
+}
+
+function onPlaylistReady(ids) {
+  if (playlistResolved) return;
+  playlistResolved = true;
+  playlistIds = ids.slice();
+  buildListPanel();
+  setTitle("Ready to play", "Tap \u25b6 to begin");
+  maybeAutoPlay();
+}
+
+function playlistFallback() {
+  if (playlistResolved) return;
+  playlistResolved = true;
+  playlistIds = [START_VIDEO_ID];
+  buildListPanel();
+  try {
+    player.cueVideoById(START_VIDEO_ID);
+  } catch (err) {
+    /* ignore */
+  }
+  setTitle("Playlist is still loading", "Tap \u25b6 to play");
+  els.songNote.textContent =
+    "YouTube is still preparing the playlist \u2014 you can still play this first song.";
+}
+
+// ============================================================
+// Player events
+// ============================================================
+function onPlayerStateChange(e) {
+  const state = e.data;
+
+  if (state === YT.PlayerState.CUED) {
+    isPlaying = false;
+    setPlayBtn(false);
+    syncIndex();
+    updateNowPlaying();
+    if (!playlistResolved) {
+      const ids = safeGetPlaylist();
+      if (ids.length) onPlaylistReady(ids);
+    }
     maybeAutoPlay();
     return;
   }
-  if (attempt < 30) {
-    setTimeout(() => waitForPlaylist(attempt + 1), 400);
-  } else {
-    els.songTitle.textContent = "Couldn't load playlist";
-    els.songArtist.textContent = "";
-    els.songNote.textContent =
-      "Playlist not found \u2014 check it's Public/Unlisted, not Private.";
-    els.listEmpty.textContent = els.songNote.textContent;
+
+  if (state === YT.PlayerState.PLAYING) {
+    isPlaying = true;
+    setPlayBtn(true);
+    syncIndex();
+    updateNowPlaying();
+    highlightActiveListItem();
+    if (!playlistResolved) {
+      const ids = safeGetPlaylist();
+      if (ids.length) onPlaylistReady(ids);
+    }
+    return;
+  }
+
+  if (state === YT.PlayerState.PAUSED) {
+    isPlaying = false;
+    setPlayBtn(false);
+    syncIndex();
+    return;
+  }
+
+  if (state === YT.PlayerState.ENDED) {
+    isPlaying = false;
+    next();
   }
 }
 
 function onPlayerError(e) {
   const code = e.data;
-  const isEmbedBlocked = code === 100 || code === 101 || code === 150;
-
-  // Log which exact video failed, so it's easy to identify on YouTube.
+  const blocked = code === 100 || code === 101 || code === 150;
   try {
-    const failedId =
-      playlistIds[recoveryIndex] ||
-      (player.getVideoData && player.getVideoData().video_id);
+    const failedId = player.getVideoData ? player.getVideoData().video_id : "";
     console.warn(
-      "[Heer Memsahab player] video failed (code " + code + "):",
-      failedId,
-      "https://youtube.com/watch?v=" + failedId
+      "[Heer Memsahab player] video error (code " +
+        code +
+        "): https://youtube.com/watch?v=" +
+        failedId
     );
   } catch (err) {
     /* ignore */
   }
-
-  if (!isEmbedBlocked) {
-    els.songNote.textContent = "\u26a0\ufe0f Playback error (code " + code + ")";
-    return;
-  }
-
-  if (!hasPlayedOnce) {
-    // Nothing has played yet, so the playlist object may not be fully
-    // initialized — a plain nextVideo() can't be trusted here. Instead,
-    // hard re-cue the whole playlist starting one video further along.
-    recoveryIndex++;
-    if (recoveryIndex >= MAX_RECOVERY_ATTEMPTS) {
-      els.songTitle.textContent = "Couldn't find a playable song";
-      els.songArtist.textContent = "";
-      els.songNote.textContent =
-        "\u26a0\ufe0f Many songs at the start of the playlist can't be embedded \u2014 check the console log, or remove/reorder them on YouTube.";
-      return;
-    }
+  if (blocked) {
+    // Song can't be embedded — skip past it so the next one plays.
     els.songNote.textContent =
       "\u26a0\ufe0f Skipping a song that can't play here\u2026";
-    try {
-      player.loadPlaylist({
-        listType: "playlist",
-        list: PLAYLIST_ID,
-        index: recoveryIndex,
-      });
-    } catch (err) {
-      /* ignore */
-    }
-    return;
+    setTimeout(function () {
+      try {
+        next();
+      } catch (err) {
+        /* ignore */
+      }
+    }, 400);
+  } else {
+    els.songNote.textContent = "\u26a0\ufe0f Playback error (code " + code + ")";
   }
-
-  // A song failed mid-listening, after playback has already worked at
-  // least once — the playlist object is healthy, so a normal skip works.
-  els.songNote.textContent = "\u26a0\ufe0f Skipping a song that can't play here\u2026";
-  setTimeout(() => {
-    try {
-      player.nextVideo();
-      player.playVideo();
-    } catch (err) {
-      /* ignore */
-    }
-  }, 350);
 }
 
-function onPlayerStateChange(e) {
-  if (e.data === YT.PlayerState.PLAYING) {
-    isPlaying = true;
-    hasPlayedOnce = true;
-    setPlayBtn(true);
-    updateNowPlaying();
-    highlightActiveListItem();
-  } else if (
-    e.data === YT.PlayerState.PAUSED ||
-    e.data === YT.PlayerState.CUED
-  ) {
-    isPlaying = false;
-    setPlayBtn(false);
-    if (e.data === YT.PlayerState.CUED) {
-      updateNowPlaying();
-      highlightActiveListItem();
-      maybeAutoPlay();
-    }
-  } else if (e.data === YT.PlayerState.ENDED) {
-    player.nextVideo();
+// Keep currentIndex in sync with whatever the player is actually on.
+function syncIndex() {
+  try {
+    const i = player.getPlaylistIndex();
+    if (Number.isFinite(i) && i >= 0) currentIndex = i;
+  } catch (err) {
+    /* ignore */
   }
 }
 
@@ -226,10 +283,16 @@ function setPlayBtn(playing) {
   els.playBtn.textContent = playing ? "\u23f8" : "\u25b6";
 }
 
+function setTitle(title, artist) {
+  els.songTitle.textContent = title;
+  els.songArtist.textContent = artist || "";
+}
+
 // ============================================================
 // Now-playing display
 // ============================================================
 function updateNowPlaying() {
+  if (!playerReady) return;
   try {
     const d = player.getVideoData();
     if (d && d.title) {
@@ -250,6 +313,52 @@ function updateNowPlaying() {
 // ============================================================
 // Playback controls
 // ============================================================
+function playAt(index) {
+  if (!playerReady || !playlistIds.length) return;
+  currentIndex = index;
+  try {
+    player.playVideoAt(index);
+    player.playVideo();
+  } catch (err) {
+    try {
+      player.loadVideoById(playlistIds[index]);
+    } catch (err2) {
+      /* ignore */
+    }
+  }
+  highlightActiveListItem();
+}
+
+function next() {
+  if (!playerReady) return;
+  if (playlistIds.length) {
+    const index =
+      currentIndex < 0 ? 0 : (currentIndex + 1) % playlistIds.length;
+    playAt(index);
+  } else {
+    try {
+      player.nextVideo();
+    } catch (err) {
+      /* ignore */
+    }
+  }
+}
+
+function prev() {
+  if (!playerReady) return;
+  if (playlistIds.length) {
+    const index =
+      currentIndex <= 0 ? playlistIds.length - 1 : currentIndex - 1;
+    playAt(index);
+  } else {
+    try {
+      player.previousVideo();
+    } catch (err) {
+      /* ignore */
+    }
+  }
+}
+
 function togglePlay() {
   if (!playerReady) {
     playWhenReady = true;
@@ -259,7 +368,11 @@ function togglePlay() {
   if (isPlaying) {
     player.pauseVideo();
   } else {
-    player.playVideo();
+    try {
+      player.playVideo();
+    } catch (err) {
+      /* ignore */
+    }
   }
 }
 
@@ -275,14 +388,14 @@ function seekBy(seconds) {
 }
 
 els.playBtn.addEventListener("click", togglePlay);
-els.prevBtn.addEventListener("click", () => {
-  if (playerReady) player.previousVideo();
+els.prevBtn.addEventListener("click", prev);
+els.nextBtn.addEventListener("click", next);
+els.back10Btn.addEventListener("click", function () {
+  seekBy(-10);
 });
-els.nextBtn.addEventListener("click", () => {
-  if (playerReady) player.nextVideo();
+els.fwd10Btn.addEventListener("click", function () {
+  seekBy(10);
 });
-els.back10Btn.addEventListener("click", () => seekBy(-10));
-els.fwd10Btn.addEventListener("click", () => seekBy(10));
 
 // ============================================================
 // Progress bar
@@ -294,15 +407,15 @@ function formatTime(seconds) {
   return m + ":" + s;
 }
 
-els.progressBar.addEventListener("pointerdown", () => {
+els.progressBar.addEventListener("pointerdown", function () {
   isDraggingProgress = true;
 });
 
-els.progressBar.addEventListener("input", () => {
+els.progressBar.addEventListener("input", function () {
   els.curTime.textContent = formatTime(els.progressBar.value);
 });
 
-els.progressBar.addEventListener("change", () => {
+els.progressBar.addEventListener("change", function () {
   if (playerReady) {
     try {
       player.seekTo(Number(els.progressBar.value), true);
@@ -339,12 +452,12 @@ function volumeIcon(v) {
   return "\ud83d\udd0a";
 }
 
-els.volBtn.addEventListener("click", (ev) => {
+els.volBtn.addEventListener("click", function (ev) {
   ev.stopPropagation();
   els.volumePopover.hidden = !els.volumePopover.hidden;
 });
 
-document.addEventListener("click", (ev) => {
+document.addEventListener("click", function (ev) {
   if (
     !els.volumePopover.hidden &&
     !els.volumePopover.contains(ev.target) &&
@@ -354,7 +467,7 @@ document.addEventListener("click", (ev) => {
   }
 });
 
-els.volumeSlider.addEventListener("input", () => {
+els.volumeSlider.addEventListener("input", function () {
   const v = Number(els.volumeSlider.value);
   els.volBtn.textContent = volumeIcon(v);
   if (playerReady) {
@@ -374,7 +487,13 @@ els.volumeSlider.addEventListener("input", () => {
 function buildListPanel() {
   els.listItems.innerHTML = "";
 
-  playlistIds.forEach((videoId, index) => {
+  if (!playlistIds.length) {
+    els.listEmpty.textContent = "No songs found yet.";
+    els.listItems.appendChild(els.listEmpty);
+    return;
+  }
+
+  playlistIds.forEach(function (videoId, index) {
     const item = document.createElement("button");
     item.className = "list-item";
     item.dataset.index = String(index);
@@ -409,16 +528,14 @@ function buildListPanel() {
 
     item.append(idxEl, thumb, text, playingMark);
 
-    item.addEventListener("click", () => {
-      if (!playerReady) return;
-      player.playVideoAt(index);
-      player.playVideo();
+    item.addEventListener("click", function () {
+      playAt(index);
       closeListPanel();
     });
 
     els.listItems.appendChild(item);
 
-    fetchVideoInfo(videoId).then((info) => {
+    fetchVideoInfo(videoId).then(function (info) {
       titleEl.textContent = info.title;
       artistEl.textContent = info.artist;
     });
@@ -435,10 +552,10 @@ function fetchVideoInfo(videoId) {
     "&format=json";
 
   return fetch(url)
-    .then((res) =>
-      res.ok ? res.json() : Promise.reject(new Error("bad response"))
-    )
-    .then((data) => {
+    .then(function (res) {
+      return res.ok ? res.json() : Promise.reject(new Error("bad response"));
+    })
+    .then(function (data) {
       const info = {
         title: data.title || "Untitled song",
         artist: data.author_name || "",
@@ -446,7 +563,7 @@ function fetchVideoInfo(videoId) {
       videoInfoCache[videoId] = info;
       return info;
     })
-    .catch(() => {
+    .catch(function () {
       const info = { title: "Untitled song", artist: "" };
       videoInfoCache[videoId] = info;
       return info;
@@ -454,18 +571,9 @@ function fetchVideoInfo(videoId) {
 }
 
 function highlightActiveListItem() {
-  if (!playerReady) return;
-  let idx;
-  try {
-    idx = player.getPlaylistIndex();
-  } catch (err) {
-    return;
-  }
-  if (idx == null || idx < 0) return;
-
   const items = els.listItems.querySelectorAll(".list-item");
-  items.forEach((item) => {
-    const active = Number(item.dataset.index) === idx;
+  items.forEach(function (item) {
+    const active = Number(item.dataset.index) === currentIndex;
     item.classList.toggle("active", active);
     const mark = item.querySelector(".list-item-playing");
     if (mark) mark.style.display = active ? "inline" : "none";
@@ -480,7 +588,7 @@ function closeListPanel() {
   els.listPanel.hidden = true;
 }
 
-els.listBtn.addEventListener("click", (ev) => {
+els.listBtn.addEventListener("click", function (ev) {
   ev.stopPropagation();
   if (els.listPanel.hidden) openListPanel();
   else closeListPanel();
@@ -488,7 +596,7 @@ els.listBtn.addEventListener("click", (ev) => {
 els.listCloseBtn.addEventListener("click", closeListPanel);
 
 // Tap anywhere outside the open list to close it.
-document.addEventListener("click", (ev) => {
+document.addEventListener("click", function (ev) {
   if (els.listPanel.hidden) return;
   if (!els.listPanel.contains(ev.target) && ev.target !== els.listBtn) {
     closeListPanel();
@@ -497,7 +605,7 @@ document.addEventListener("click", (ev) => {
 
 // Keyboard shortcuts (nice on desktop): Space = play/pause,
 // ← / → = skip 10 seconds.
-document.addEventListener("keydown", (ev) => {
+document.addEventListener("keydown", function (ev) {
   const tag = (ev.target.tagName || "").toLowerCase();
   if (
     tag === "input" ||
@@ -524,7 +632,7 @@ function startClock() {
   const timeEl = document.getElementById("clockTime");
   const ampmEl = document.getElementById("clockAmPm");
   const dateEl = document.getElementById("clockDate");
-  const tick = () => {
+  const tick = function () {
     const now = new Date();
     let h = now.getHours();
     const ampm = h >= 12 ? "PM" : "AM";
@@ -585,10 +693,12 @@ function initWeather() {
 function checkBackground() {
   const candidates = ["background.png", "background.jpg"];
   let i = 0;
-  const tryNext = () => {
+  const tryNext = function () {
     if (i >= candidates.length) return;
     const img = new Image();
-    img.onload = () => document.body.classList.add("has-bg");
+    img.onload = function () {
+      document.body.classList.add("has-bg");
+    };
     img.onerror = tryNext;
     img.src = candidates[i++];
   };
