@@ -40,8 +40,9 @@ let isPlaying = false;
 let isDraggingProgress = false;
 let playlistIds = []; // video IDs in playlist order
 const videoInfoCache = {}; // videoId -> { title, artist }
-let consecutiveErrors = 0;
-const MAX_CONSECUTIVE_SKIPS = 15; // safety net against an all-blocked playlist
+let hasPlayedOnce = false; // true once any video successfully starts playing
+let recoveryIndex = 0; // which start index we're currently trying
+const MAX_RECOVERY_ATTEMPTS = 40; // safety net against an all-blocked playlist
 
 // ============================================================
 // YouTube IFrame API
@@ -99,8 +100,8 @@ function waitForPlaylist(attempt) {
     buildListPanel();
     return;
   }
-  if (attempt < 20) {
-    setTimeout(() => waitForPlaylist(attempt + 1), 300);
+  if (attempt < 30) {
+    setTimeout(() => waitForPlaylist(attempt + 1), 400);
   } else {
     els.songTitle.textContent = "Couldn't load playlist";
     els.songArtist.textContent = "";
@@ -113,36 +114,65 @@ function onPlayerError(e) {
   const code = e.data;
   const isEmbedBlocked = code === 100 || code === 101 || code === 150;
 
-  if (isEmbedBlocked && consecutiveErrors < MAX_CONSECUTIVE_SKIPS) {
-    // This song can't play here — skip to the next one automatically
-    // rather than leaving the player stuck.
-    consecutiveErrors++;
-    els.songNote.textContent = "\u26a0\ufe0f Skipping a song that can't play here\u2026";
-    setTimeout(() => {
-      try {
-        player.nextVideo();
-        player.playVideo();
-      } catch (err) {
-        /* ignore */
-      }
-    }, 350);
+  // Log which exact video failed, so it's easy to identify on YouTube.
+  try {
+    const failedId = playlistIds[recoveryIndex] || (player.getVideoData && player.getVideoData().video_id);
+    console.warn(
+      "[Heer Memsahab player] video failed (code " + code + "):",
+      failedId,
+      "https://youtube.com/watch?v=" + failedId
+    );
+  } catch (err) {
+    /* ignore */
+  }
+
+  if (!isEmbedBlocked) {
+    els.songNote.textContent = "\u26a0\ufe0f Playback error (code " + code + ")";
     return;
   }
 
-  let msg = "\u26a0\ufe0f Playback error (code " + code + ")";
-  if (code === 100) msg = "\u26a0\ufe0f Video not found or removed";
-  if (code === 101 || code === 150) {
-    msg = consecutiveErrors >= MAX_CONSECUTIVE_SKIPS
-      ? "\u26a0\ufe0f Several songs in a row can't be embedded \u2014 check the playlist"
-      : "\u26a0\ufe0f This video can't be embedded here (blocked by uploader)";
+  if (!hasPlayedOnce) {
+    // Nothing has played yet, so the playlist object may not be fully
+    // initialized — a plain nextVideo() can't be trusted here. Instead,
+    // hard re-cue the whole playlist starting one video further along.
+    recoveryIndex++;
+    if (recoveryIndex >= MAX_RECOVERY_ATTEMPTS) {
+      els.songTitle.textContent = "Couldn't find a playable song";
+      els.songArtist.textContent = "";
+      els.songNote.textContent =
+        "\u26a0\ufe0f Many songs at the start of the playlist can't be embedded \u2014 check the console log, or remove/reorder them on YouTube.";
+      return;
+    }
+    els.songNote.textContent = "\u26a0\ufe0f Skipping a song that can't play here\u2026";
+    try {
+      player.loadPlaylist({
+        listType: "playlist",
+        list: PLAYLIST_ID,
+        index: recoveryIndex,
+      });
+    } catch (err) {
+      /* ignore */
+    }
+    return;
   }
-  els.songNote.textContent = msg;
+
+  // A song failed mid-listening, after playback has already worked at
+  // least once — the playlist object is healthy, so a normal skip works.
+  els.songNote.textContent = "\u26a0\ufe0f Skipping a song that can't play here\u2026";
+  setTimeout(() => {
+    try {
+      player.nextVideo();
+      player.playVideo();
+    } catch (err) {
+      /* ignore */
+    }
+  }, 350);
 }
 
 function onPlayerStateChange(e) {
   if (e.data === YT.PlayerState.PLAYING) {
     isPlaying = true;
-    consecutiveErrors = 0;
+    hasPlayedOnce = true;
     setPlayBtn(true);
     updateNowPlaying();
     highlightActiveListItem();
