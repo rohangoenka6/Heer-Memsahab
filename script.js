@@ -1,63 +1,44 @@
-// ============================================================
-//  Heer Memsahab — playlist-driven music player
-//
-//  The YouTube playlist below is the single source of truth.
-//  Add a song to the playlist on YouTube and it appears here
-//  automatically — nothing in this file needs to change.
-// ============================================================
+// Memsahab — daily song from the playlist
 
 const PLAYLIST_ID = "PLWy_M1Gs9zY8";
-const SITE_ORIGIN = "https://rohangoenka6.github.io";
+const START_DATE = new Date(2026, 7, 16); // first day
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-// ---------- Elements ----------
 const els = {
+  dayBadge: document.getElementById("dayBadge"),
   songTitle: document.getElementById("songTitle"),
   songArtist: document.getElementById("songArtist"),
   songNote: document.getElementById("songNote"),
   songCover: document.getElementById("songCover"),
   playBtn: document.getElementById("playBtn"),
+  heartBtn: document.getElementById("heartBtn"),
   prevBtn: document.getElementById("prevBtn"),
   nextBtn: document.getElementById("nextBtn"),
-  back10Btn: document.getElementById("back10Btn"),
-  fwd10Btn: document.getElementById("fwd10Btn"),
-  progressBar: document.getElementById("progressBar"),
-  curTime: document.getElementById("curTime"),
-  durTime: document.getElementById("durTime"),
-  volBtn: document.getElementById("volBtn"),
-  volumePopover: document.getElementById("volumePopover"),
-  volumeSlider: document.getElementById("volumeSlider"),
-  listBtn: document.getElementById("listBtn"),
-  listPanel: document.getElementById("listPanel"),
-  listCloseBtn: document.getElementById("listCloseBtn"),
-  listItems: document.getElementById("listItems"),
-  listEmpty: document.getElementById("listEmpty"),
 };
 
-// ---------- State ----------
 let player = null;
-let playerReady = false;
 let isPlaying = false;
-let isDraggingProgress = false;
-let playlistIds = []; // video IDs in playlist order
-const videoInfoCache = {}; // videoId -> { title, artist }
-let hasPlayedOnce = false; // true once any video successfully starts playing
-let recoveryIndex = 0; // which start index we're currently trying
-const MAX_RECOVERY_ATTEMPTS = 40; // safety net against an all-blocked playlist
+let playlistLength = 0;
+let playerReady = false;
 
-// ============================================================
-// YouTube IFrame API
-// ============================================================
-function onYouTubeIframeAPIReady() {
+// ---------- Day counter ----------
+function todayIndex() {
+  const diff = Math.floor((Date.now() - START_DATE.getTime()) / DAY_MS);
+  return Math.max(0, diff);
+}
+
+// ---------- Player ----------
+function initPlayer(autoplay) {
   player = new YT.Player("ytPlayer", {
     playerVars: {
-      autoplay: 0,
+      autoplay: autoplay ? 1 : 0,
       controls: 0,
       rel: 0,
       fs: 0,
       iv_load_policy: 3,
       playsinline: 1,
       enablejsapi: 1,
-      origin: SITE_ORIGIN,
+      origin: "https://rohangoenka6.github.io",
       listType: "playlist",
       list: PLAYLIST_ID,
     },
@@ -68,12 +49,12 @@ function onYouTubeIframeAPIReady() {
     },
   });
 }
-window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
 
 function onPlayerReady() {
   playerReady = true;
-
-  const iframe = player.getIframe ? player.getIframe() : null;
+  const iframe = player.getIframe
+    ? player.getIframe()
+    : document.querySelector("#ytPlayer iframe");
   if (iframe) {
     iframe.setAttribute(
       "allow",
@@ -82,111 +63,60 @@ function onPlayerReady() {
     iframe.setAttribute("playsinline", "1");
   }
 
-  player.setVolume(Number(els.volumeSlider.value));
-
-  els.songTitle.textContent = "Loading playlist\u2026";
-  els.songArtist.textContent = "";
-  waitForPlaylist(0);
-}
-
-// The playlist's video list isn't always available the instant the
-// player fires "ready" — poll briefly until it shows up.
-function waitForPlaylist(attempt) {
-  const list = player.getPlaylist ? player.getPlaylist() : null;
+  const list = player.getPlaylist ? player.getPlaylist() : [];
   if (list && list.length) {
-    playlistIds = list;
-    els.songTitle.textContent = "Ready to play";
-    els.songArtist.textContent = "Tap play to begin";
-    buildListPanel();
-    return;
-  }
-  if (attempt < 30) {
-    setTimeout(() => waitForPlaylist(attempt + 1), 400);
+    playlistLength = list.length;
+    const start = todayIndex() % playlistLength;
+    if (start > 0) {
+      player.playVideoAt(start);
+    }
+    updateFromVideo();
   } else {
-    els.songTitle.textContent = "Couldn't load playlist";
-    els.songArtist.textContent = "";
-    els.listEmpty.textContent =
-      "Playlist not found \u2014 check it's Public/Unlisted, not Private.";
+    // Playlist couldn't load — play the first video directly as a fallback.
+    player.loadVideoById("LUgpPmj6nR8");
   }
 }
 
 function onPlayerError(e) {
   const code = e.data;
-  const isEmbedBlocked = code === 100 || code === 101 || code === 150;
-
-  // Log which exact video failed, so it's easy to identify on YouTube.
-  try {
-    const failedId = playlistIds[recoveryIndex] || (player.getVideoData && player.getVideoData().video_id);
-    console.warn(
-      "[Heer Memsahab player] video failed (code " + code + "):",
-      failedId,
-      "https://youtube.com/watch?v=" + failedId
-    );
-  } catch (err) {
-    /* ignore */
-  }
-
-  if (!isEmbedBlocked) {
+  if (code === 100) {
+    els.songNote.textContent = "\u26a0\ufe0f Video not found or removed";
+  } else if (code === 101 || code === 150) {
+    els.songNote.textContent =
+      "\u26a0\ufe0f This video can't be embedded here (blocked)";
+  } else {
     els.songNote.textContent = "\u26a0\ufe0f Playback error (code " + code + ")";
-    return;
   }
+}
 
-  if (!hasPlayedOnce) {
-    // Nothing has played yet, so the playlist object may not be fully
-    // initialized — a plain nextVideo() can't be trusted here. Instead,
-    // hard re-cue the whole playlist starting one video further along.
-    recoveryIndex++;
-    if (recoveryIndex >= MAX_RECOVERY_ATTEMPTS) {
-      els.songTitle.textContent = "Couldn't find a playable song";
-      els.songArtist.textContent = "";
-      els.songNote.textContent =
-        "\u26a0\ufe0f Many songs at the start of the playlist can't be embedded \u2014 check the console log, or remove/reorder them on YouTube.";
-      return;
+// Show the real song name, artist and cover straight from YouTube
+function updateFromVideo() {
+  els.dayBadge.textContent =
+    "\u2764\ufe0f DAY " + String(todayIndex() + 1).padStart(2, "0");
+  try {
+    const d = player.getVideoData();
+    if (d && d.title) els.songTitle.textContent = d.title;
+    if (d && d.author) els.songArtist.textContent = d.author;
+    if (d && d.video_id) {
+      els.songCover.src =
+        "https://i.ytimg.com/vi/" + d.video_id + "/mqdefault.jpg";
+      els.songCover.alt = d.title || "Song cover";
     }
-    els.songNote.textContent = "\u26a0\ufe0f Skipping a song that can't play here\u2026";
-    try {
-      player.loadPlaylist({
-        listType: "playlist",
-        list: PLAYLIST_ID,
-        index: recoveryIndex,
-      });
-    } catch (err) {
-      /* ignore */
-    }
-    return;
+  } catch (e) {
+    /* player not ready yet */
   }
-
-  // A song failed mid-listening, after playback has already worked at
-  // least once — the playlist object is healthy, so a normal skip works.
-  els.songNote.textContent = "\u26a0\ufe0f Skipping a song that can't play here\u2026";
-  setTimeout(() => {
-    try {
-      player.nextVideo();
-      player.playVideo();
-    } catch (err) {
-      /* ignore */
-    }
-  }, 350);
 }
 
 function onPlayerStateChange(e) {
   if (e.data === YT.PlayerState.PLAYING) {
     isPlaying = true;
-    hasPlayedOnce = true;
     setPlayBtn(true);
-    updateNowPlaying();
-    highlightActiveListItem();
-  } else if (
-    e.data === YT.PlayerState.PAUSED ||
-    e.data === YT.PlayerState.CUED
-  ) {
+    updateFromVideo();
+  } else if (e.data === YT.PlayerState.PAUSED || e.data === YT.PlayerState.CUED) {
     isPlaying = false;
     setPlayBtn(false);
-    if (e.data === YT.PlayerState.CUED) {
-      updateNowPlaying();
-      highlightActiveListItem();
-    }
   } else if (e.data === YT.PlayerState.ENDED) {
+    // Song finished — move to the next song in the playlist.
     player.nextVideo();
   }
 }
@@ -195,31 +125,11 @@ function setPlayBtn(playing) {
   els.playBtn.textContent = playing ? "\u23f8" : "\u25b6";
 }
 
-// ============================================================
-// Now-playing display
-// ============================================================
-function updateNowPlaying() {
-  try {
-    const d = player.getVideoData();
-    if (d && d.title) {
-      els.songTitle.textContent = d.title;
-      els.songArtist.textContent = d.author || "";
-    }
-    if (d && d.video_id) {
-      els.songCover.src = "https://i.ytimg.com/vi/" + d.video_id + "/mqdefault.jpg";
-      els.songCover.alt = d.title || "Song cover";
-    }
-    els.songNote.textContent = "For you, always \u2764\ufe0f";
-  } catch (err) {
-    /* player not ready yet */
-  }
-}
-
-// ============================================================
-// Playback controls
-// ============================================================
 function togglePlay() {
-  if (!playerReady) return;
+  if (!player) {
+    initPlayer(true);
+    return;
+  }
   if (isPlaying) {
     player.pauseVideo();
   } else {
@@ -227,226 +137,17 @@ function togglePlay() {
   }
 }
 
-function seekBy(seconds) {
-  if (!playerReady) return;
-  try {
-    const current = player.getCurrentTime();
-    const duration = player.getDuration();
-    player.seekTo(Math.max(0, Math.min(duration, current + seconds)), true);
-  } catch (err) {
-    /* ignore */
-  }
-}
-
+// ---------- UI wiring ----------
 els.playBtn.addEventListener("click", togglePlay);
-els.prevBtn.addEventListener("click", () => playerReady && player.previousVideo());
-els.nextBtn.addEventListener("click", () => playerReady && player.nextVideo());
-els.back10Btn.addEventListener("click", () => seekBy(-10));
-els.fwd10Btn.addEventListener("click", () => seekBy(10));
-
-// ============================================================
-// Progress bar
-// ============================================================
-function formatTime(seconds) {
-  seconds = Math.floor(Number(seconds) || 0);
-  const m = Math.floor(seconds / 60);
-  const s = String(seconds % 60).padStart(2, "0");
-  return m + ":" + s;
-}
-
-els.progressBar.addEventListener("pointerdown", () => {
-  isDraggingProgress = true;
+els.heartBtn.addEventListener("click", togglePlay);
+els.prevBtn.addEventListener("click", () => {
+  if (player) player.previousVideo();
+});
+els.nextBtn.addEventListener("click", () => {
+  if (player) player.nextVideo();
 });
 
-els.progressBar.addEventListener("input", () => {
-  els.curTime.textContent = formatTime(els.progressBar.value);
-});
-
-els.progressBar.addEventListener("change", () => {
-  if (playerReady) {
-    try {
-      player.seekTo(Number(els.progressBar.value), true);
-    } catch (err) {
-      /* ignore */
-    }
-  }
-  isDraggingProgress = false;
-});
-
-function pollProgress() {
-  if (!playerReady || isDraggingProgress) return;
-  try {
-    const current = player.getCurrentTime();
-    const duration = player.getDuration();
-    if (duration > 0) {
-      els.progressBar.max = duration;
-      els.progressBar.value = current;
-      els.curTime.textContent = formatTime(current);
-      els.durTime.textContent = formatTime(duration);
-    }
-  } catch (err) {
-    /* ignore */
-  }
-}
-setInterval(pollProgress, 500);
-
-// ============================================================
-// Volume
-// ============================================================
-function volumeIcon(v) {
-  if (v <= 0) return "\ud83d\udd07";
-  if (v < 50) return "\ud83d\udd09";
-  return "\ud83d\udd0a";
-}
-
-els.volBtn.addEventListener("click", (ev) => {
-  ev.stopPropagation();
-  els.volumePopover.hidden = !els.volumePopover.hidden;
-});
-
-document.addEventListener("click", (ev) => {
-  if (
-    !els.volumePopover.hidden &&
-    !els.volumePopover.contains(ev.target) &&
-    ev.target !== els.volBtn
-  ) {
-    els.volumePopover.hidden = true;
-  }
-});
-
-els.volumeSlider.addEventListener("input", () => {
-  const v = Number(els.volumeSlider.value);
-  els.volBtn.textContent = volumeIcon(v);
-  if (playerReady) {
-    try {
-      player.setVolume(v);
-      if (v === 0) player.mute();
-      else player.unMute();
-    } catch (err) {
-      /* ignore */
-    }
-  }
-});
-
-// ============================================================
-// Song list panel
-// ============================================================
-function buildListPanel() {
-  els.listItems.innerHTML = "";
-
-  playlistIds.forEach((videoId, index) => {
-    const item = document.createElement("button");
-    item.className = "list-item";
-    item.dataset.index = String(index);
-
-    const idxEl = document.createElement("span");
-    idxEl.className = "list-item-index";
-    idxEl.textContent = String(index + 1);
-
-    const thumb = document.createElement("img");
-    thumb.className = "list-item-thumb";
-    thumb.src = "https://i.ytimg.com/vi/" + videoId + "/default.jpg";
-    thumb.alt = "";
-
-    const text = document.createElement("div");
-    text.className = "list-item-text";
-
-    const titleEl = document.createElement("div");
-    titleEl.className = "list-item-title";
-    titleEl.textContent = "Loading\u2026";
-
-    const artistEl = document.createElement("div");
-    artistEl.className = "list-item-artist";
-    artistEl.textContent = "";
-
-    text.append(titleEl, artistEl);
-
-    const playingMark = document.createElement("span");
-    playingMark.className = "list-item-playing";
-    playingMark.textContent = "\u266a";
-    playingMark.style.display = "none";
-
-    item.append(idxEl, thumb, text, playingMark);
-
-    item.addEventListener("click", () => {
-      if (!playerReady) return;
-      player.playVideoAt(index);
-      player.playVideo();
-      closeListPanel();
-    });
-
-    els.listItems.appendChild(item);
-
-    fetchVideoInfo(videoId).then((info) => {
-      titleEl.textContent = info.title;
-      artistEl.textContent = info.artist;
-    });
-  });
-}
-
-function fetchVideoInfo(videoId) {
-  if (videoInfoCache[videoId]) {
-    return Promise.resolve(videoInfoCache[videoId]);
-  }
-  const url =
-    "https://www.youtube.com/oembed?url=" +
-    encodeURIComponent("https://www.youtube.com/watch?v=" + videoId) +
-    "&format=json";
-
-  return fetch(url)
-    .then((res) => res.json())
-    .then((data) => {
-      const info = {
-        title: data.title || "Untitled song",
-        artist: data.author_name || "",
-      };
-      videoInfoCache[videoId] = info;
-      return info;
-    })
-    .catch(() => {
-      const info = { title: "Untitled song", artist: "" };
-      videoInfoCache[videoId] = info;
-      return info;
-    });
-}
-
-function highlightActiveListItem() {
-  if (!playerReady) return;
-  let idx;
-  try {
-    idx = player.getPlaylistIndex();
-  } catch (err) {
-    return;
-  }
-  if (idx == null || idx < 0) return;
-
-  const items = els.listItems.querySelectorAll(".list-item");
-  items.forEach((item) => {
-    const active = Number(item.dataset.index) === idx;
-    item.classList.toggle("active", active);
-    const mark = item.querySelector(".list-item-playing");
-    if (mark) mark.style.display = active ? "inline" : "none";
-  });
-}
-
-function openListPanel() {
-  els.listPanel.hidden = false;
-  highlightActiveListItem();
-}
-function closeListPanel() {
-  els.listPanel.hidden = true;
-}
-
-els.listBtn.addEventListener("click", (ev) => {
-  ev.stopPropagation();
-  if (els.listPanel.hidden) openListPanel();
-  else closeListPanel();
-});
-els.listCloseBtn.addEventListener("click", closeListPanel);
-
-// ============================================================
-// Clock
-// ============================================================
+// ---------- Clock ----------
 function startClock() {
   const timeEl = document.getElementById("clockTime");
   const ampmEl = document.getElementById("clockAmPm");
@@ -469,9 +170,7 @@ function startClock() {
   setInterval(tick, 1000);
 }
 
-// ============================================================
-// Weather
-// ============================================================
+// ---------- Weather (tiny pill, left of the clock) ----------
 function wmoEmoji(code) {
   if (code === 0) return "\u2600\ufe0f";
   if (code <= 2) return "\u26c5";
@@ -496,7 +195,7 @@ async function fetchWeather(lat, lon, el) {
     const data = await wRes.json();
     const temp = Math.round(data.current.temperature_2m);
     el.textContent = wmoEmoji(data.current.weather_code) + " " + temp + "\u00b0";
-  } catch (err) {
+  } catch (e) {
     el.textContent = "\ud83c\udf19";
   }
 }
@@ -506,9 +205,7 @@ function initWeather() {
   fetchWeather(18.5204, 73.8567, el); // Pune, Maharashtra
 }
 
-// ============================================================
-// Background artwork
-// ============================================================
+// ---------- Background (Canva artwork) ----------
 function checkBackground() {
   const candidates = ["background.png", "background.jpg"];
   let i = 0;
@@ -522,9 +219,570 @@ function checkBackground() {
   tryNext();
 }
 
-// ============================================================
-// Boot
-// ============================================================
+// ---------- Boot ----------
+function onYouTubeIframeAPIReady() {
+  initPlayer(false);
+}
+
+window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
+
 checkBackground();
 startClock();
 initWeather();
+
+/* =========================================================
+   MEMSAHAB PLAYER — PROGRESS BAR + PLAYLIST LIST
+   ========================================================= */
+
+(function () {
+  let progressBar = null;
+  let currentTimeText = null;
+  let durationText = null;
+  let listPanel = null;
+
+  function formatTime(seconds) {
+    seconds = Math.floor(Number(seconds) || 0);
+
+    const minutes = Math.floor(seconds / 60);
+    const secs = String(seconds % 60).padStart(2, "0");
+
+    return minutes + ":" + secs;
+  }
+
+  function seekBy(seconds) {
+    if (!player || !playerReady) return;
+
+    try {
+      const current = player.getCurrentTime();
+      const duration = player.getDuration();
+
+      player.seekTo(
+        Math.max(0, Math.min(duration, current + seconds)),
+        true
+      );
+    } catch (error) {
+      console.log("Seek error:", error);
+    }
+  }
+
+  function updateProgress() {
+    if (!player || !playerReady || !progressBar) return;
+
+    try {
+      const current = player.getCurrentTime();
+      const duration = player.getDuration();
+
+      if (duration > 0) {
+        progressBar.max = duration;
+        progressBar.value = current;
+
+        if (currentTimeText) {
+          currentTimeText.textContent = formatTime(current);
+        }
+
+        if (durationText) {
+          durationText.textContent = formatTime(duration);
+        }
+      }
+    } catch (error) {
+      // Player may temporarily be unavailable
+    }
+  }
+
+  /* =========================================================
+     CREATE PROGRESS BAR
+     ========================================================= */
+
+  function createProgressControls() {
+
+    if (document.getElementById("memsahab-progress-row")) {
+      return;
+    }
+
+    const playerBar =
+      document.querySelector(".pb-info") ||
+      document.querySelector(".player-info") ||
+      document.querySelector(".now-playing");
+
+    if (!playerBar) {
+      console.log("MemSahab: player info area not found.");
+      return;
+    }
+
+    const row = document.createElement("div");
+
+    row.id = "memsahab-progress-row";
+
+    row.style.cssText = `
+      width:100%;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      margin-top:5px;
+      box-sizing:border-box;
+    `;
+
+    /* ---------- Back 10 ---------- */
+
+    const backButton = document.createElement("button");
+
+    backButton.textContent = "↶10";
+
+    backButton.title = "Back 10 seconds";
+
+    backButton.style.cssText = `
+      border:0;
+      background:transparent;
+      color:rgba(255,255,255,.65);
+      font-size:10px;
+      padding:2px 3px;
+      cursor:pointer;
+    `;
+
+    backButton.onclick = function (event) {
+      event.stopPropagation();
+      seekBy(-10);
+    };
+
+    /* ---------- Current time ---------- */
+
+    currentTimeText = document.createElement("span");
+
+    currentTimeText.textContent = "0:00";
+
+    currentTimeText.style.cssText = `
+      color:rgba(255,255,255,.55);
+      font-size:9px;
+      min-width:28px;
+      text-align:center;
+    `;
+
+    /* ---------- Progress ---------- */
+
+    progressBar = document.createElement("input");
+
+    progressBar.type = "range";
+    progressBar.min = "0";
+    progressBar.max = "100";
+    progressBar.value = "0";
+    progressBar.step = "0.1";
+
+    progressBar.style.cssText = `
+      flex:1;
+      min-width:40px;
+      height:3px;
+      cursor:pointer;
+      accent-color:#ffd98a;
+    `;
+
+    progressBar.addEventListener("input", function () {
+
+      if (!player || !playerReady) return;
+
+      try {
+        player.seekTo(Number(this.value), true);
+      } catch (error) {
+        console.log("Progress seek error:", error);
+      }
+
+    });
+
+    /* ---------- Duration ---------- */
+
+    durationText = document.createElement("span");
+
+    durationText.textContent = "0:00";
+
+    durationText.style.cssText = `
+      color:rgba(255,255,255,.55);
+      font-size:9px;
+      min-width:28px;
+      text-align:center;
+    `;
+
+    /* ---------- Forward 10 ---------- */
+
+    const forwardButton = document.createElement("button");
+
+    forwardButton.textContent = "10↷";
+
+    forwardButton.title = "Forward 10 seconds";
+
+    forwardButton.style.cssText = `
+      border:0;
+      background:transparent;
+      color:rgba(255,255,255,.65);
+      font-size:10px;
+      padding:2px 3px;
+      cursor:pointer;
+    `;
+
+    forwardButton.onclick = function (event) {
+      event.stopPropagation();
+      seekBy(10);
+    };
+
+    row.append(
+      backButton,
+      currentTimeText,
+      progressBar,
+      durationText,
+      forwardButton
+    );
+
+    playerBar.appendChild(row);
+  }
+
+
+  /* =========================================================
+     CREATE LIST BUTTON
+     ========================================================= */
+
+  function createListButton() {
+
+    if (document.getElementById("memsahab-list-button")) {
+      return;
+    }
+
+    const controls =
+      document.querySelector(".pb-controls") ||
+      document.querySelector(".player-controls");
+
+    if (!controls) {
+      console.log("MemSahab: player controls not found.");
+      return;
+    }
+
+    const button = document.createElement("button");
+
+    button.id = "memsahab-list-button";
+
+    button.textContent = "☰ List";
+
+    button.title = "View songs";
+
+    button.style.cssText = `
+      height:34px;
+      padding:0 11px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.15);
+      background:rgba(255,255,255,.08);
+      color:white;
+      cursor:pointer;
+      font-size:11px;
+      white-space:nowrap;
+      margin-right:5px;
+    `;
+
+    button.onclick = function (event) {
+
+      event.stopPropagation();
+
+      if (!listPanel) {
+        createPlaylistPanel();
+      }
+
+      if (listPanel.style.display === "none") {
+
+        listPanel.style.display = "block";
+
+        populatePlaylist();
+
+      } else {
+
+        listPanel.style.display = "none";
+
+      }
+
+    };
+
+    controls.insertBefore(button, controls.firstChild);
+  }
+
+
+  /* =========================================================
+     PLAYLIST PANEL
+     ========================================================= */
+
+  function createPlaylistPanel() {
+
+    listPanel = document.createElement("div");
+
+    listPanel.id = "memsahab-playlist-panel";
+
+    listPanel.style.cssText = `
+      position:fixed;
+      left:50%;
+      bottom:105px;
+      transform:translateX(-50%);
+      width:min(420px,calc(100% - 24px));
+      max-height:55vh;
+      overflow-y:auto;
+      background:rgba(14,10,24,.97);
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:20px;
+      padding:12px;
+      box-sizing:border-box;
+      box-shadow:0 20px 60px rgba(0,0,0,.55);
+      backdrop-filter:blur(20px);
+      -webkit-backdrop-filter:blur(20px);
+      z-index:99999;
+      display:none;
+    `;
+
+    /* ---------- Header ---------- */
+
+    const header = document.createElement("div");
+
+    header.style.cssText = `
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:4px 5px 10px;
+      color:white;
+      font-size:13px;
+      font-weight:600;
+    `;
+
+    const title = document.createElement("span");
+
+    title.textContent = "❤️ Heer Memsahab";
+
+    const closeButton = document.createElement("button");
+
+    closeButton.textContent = "×";
+
+    closeButton.style.cssText = `
+      border:0;
+      background:transparent;
+      color:white;
+      font-size:22px;
+      cursor:pointer;
+      padding:0 5px;
+    `;
+
+    closeButton.onclick = function () {
+      listPanel.style.display = "none";
+    };
+
+    header.append(title, closeButton);
+
+    listPanel.appendChild(header);
+
+    document.body.appendChild(listPanel);
+  }
+
+
+  /* =========================================================
+     LOAD PLAYLIST SONGS
+     ========================================================= */
+
+  function populatePlaylist() {
+
+    if (!player || !listPanel) return;
+
+    try {
+
+      const playlist = player.getPlaylist();
+
+      if (!playlist || !playlist.length) {
+        return;
+      }
+
+      /* Remove old song entries */
+
+      const oldSongs =
+        listPanel.querySelectorAll(".memsahab-song-item");
+
+      oldSongs.forEach(function (song) {
+        song.remove();
+      });
+
+
+      playlist.forEach(function (videoId, index) {
+
+        const item = document.createElement("button");
+
+        item.className = "memsahab-song-item";
+
+        item.style.cssText = `
+          width:100%;
+          display:block;
+          text-align:left;
+          border:0;
+          border-radius:12px;
+          padding:9px;
+          margin:2px 0;
+          background:transparent;
+          color:white;
+          cursor:pointer;
+          box-sizing:border-box;
+        `;
+
+        item.innerHTML = `
+          <div style="
+            color:#ffd98a;
+            font-size:9px;
+            margin-bottom:2px;
+          ">
+            DAY ${String(index + 1).padStart(2, "0")}
+          </div>
+
+          <div class="memsahab-song-title" style="
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          ">
+            Loading song...
+          </div>
+        `;
+
+
+        item.onmouseenter = function () {
+          item.style.background =
+            "rgba(255,255,255,.08)";
+        };
+
+        item.onmouseleave = function () {
+          item.style.background =
+            "transparent";
+        };
+
+
+        item.onclick = function () {
+
+          try {
+
+            player.playVideoAt(index);
+
+            listPanel.style.display = "none";
+
+          } catch (error) {
+
+            console.log(
+              "Could not play selected song:",
+              error
+            );
+
+          }
+
+        };
+
+
+        listPanel.appendChild(item);
+
+
+        /* Get YouTube title */
+
+        fetch(
+          "https://www.youtube.com/oembed?url=" +
+          encodeURIComponent(
+            "https://www.youtube.com/watch?v=" + videoId
+          ) +
+          "&format=json"
+        )
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (data) {
+
+          const titleElement =
+            item.querySelector(
+              ".memsahab-song-title"
+            );
+
+          if (titleElement) {
+            titleElement.textContent =
+              data.title || "Untitled Song";
+          }
+
+        })
+        .catch(function () {
+
+          const titleElement =
+            item.querySelector(
+              ".memsahab-song-title"
+            );
+
+          if (titleElement) {
+            titleElement.textContent =
+              "Song " + (index + 1);
+          }
+
+        });
+
+      });
+
+    } catch (error) {
+
+      console.log(
+        "Could not load playlist:",
+        error
+      );
+
+    }
+
+  }
+
+
+  /* =========================================================
+     INITIALIZE EXTRA CONTROLS
+     ========================================================= */
+
+  function initializeMemsahabControls() {
+
+    createProgressControls();
+
+    createListButton();
+
+  }
+
+
+  /* =========================================================
+     WAIT FOR PLAYER UI
+     ========================================================= */
+
+  window.addEventListener("load", function () {
+
+    let attempts = 0;
+
+    const timer = setInterval(function () {
+
+      attempts++;
+
+      initializeMemsahabControls();
+
+      if (
+        document.getElementById(
+          "memsahab-progress-row"
+        ) &&
+        document.getElementById(
+          "memsahab-list-button"
+        )
+      ) {
+
+        clearInterval(timer);
+
+      }
+
+      if (attempts > 30) {
+        clearInterval(timer);
+      }
+
+    }, 500);
+
+  });
+
+
+  /* =========================================================
+     UPDATE PROGRESS EVERY HALF SECOND
+     ========================================================= */
+
+  setInterval(function () {
+
+    updateProgress();
+
+  }, 500);
+
+})();
