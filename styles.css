@@ -238,7 +238,7 @@ body.has-bg .scene-svg {
   color: var(--text-muted);
 }
 
-/* ---------- Minimal player bar ---------- */
+/* ---------- Player bar ---------- */
 .player-bar {
   position: fixed;
   left: 50%;
@@ -247,33 +247,16 @@ body.has-bg .scene-svg {
   z-index: 10;
   width: var(--bar-w);
   display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.7rem 0.85rem 0.75rem;
+  border-radius: 26px;
+}
+
+.pb-top {
+  display: flex;
   align-items: center;
   gap: 0.7rem;
-  padding: 0.55rem 0.7rem;
-  border-radius: 999px;
-}
-
-.pb-heart {
-  flex: 0 0 auto;
-  width: 2.6rem;
-  height: 2.6rem;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255, 217, 138, 0.16);
-  font-size: 1.2rem;
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 0 16px rgba(255, 199, 110, 0.25);
-  transition: transform 0.15s ease, background 0.15s ease;
-}
-
-.pb-heart:hover {
-  background: rgba(255, 217, 138, 0.28);
-}
-
-.pb-heart:active {
-  transform: scale(0.9);
 }
 
 .pb-cover {
@@ -292,23 +275,6 @@ body.has-bg .scene-svg {
   min-width: 0;
 }
 
-.pb-line {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.pb-day {
-  flex: 0 0 auto;
-  font-family: "Noto Sans Bengali", sans-serif;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  color: var(--gold);
-}
-
 .pb-title {
   font-family: "DM Serif Display", serif;
   font-size: 1.02rem;
@@ -319,19 +285,17 @@ body.has-bg .scene-svg {
 }
 
 .pb-artist {
-  flex: 0 0 auto;
   font-size: 0.78rem;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 40%;
 }
 
 .pb-note {
-  margin-top: 0.1rem;
+  text-align: center;
   font-family: "Noto Sans Bengali", sans-serif;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-style: italic;
   color: var(--text-muted);
   white-space: nowrap;
@@ -339,21 +303,77 @@ body.has-bg .scene-svg {
   text-overflow: ellipsis;
 }
 
-.pb-controls {
+.pb-top-actions {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 0.35rem;
 }
 
+/* ---------- Progress row ---------- */
+.pb-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pb-time {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  min-width: 2rem;
+  text-align: center;
+}
+
+.pb-range {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  accent-color: var(--gold);
+}
+
+.pb-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--gold-soft);
+  box-shadow: 0 0 8px rgba(255, 217, 138, 0.7);
+  cursor: pointer;
+}
+
+.pb-range::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: none;
+  border-radius: 50%;
+  background: var(--gold-soft);
+  box-shadow: 0 0 8px rgba(255, 217, 138, 0.7);
+  cursor: pointer;
+}
+
+/* ---------- Controls row ---------- */
+.pb-controls-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
 .ctrl {
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 2.3rem;
+  height: 2.3rem;
   border-radius: 50%;
   border: 1px solid var(--glass-border);
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
-  font-size: 1.1rem;
+  font-size: 1rem;
   cursor: pointer;
   transition: transform 0.15s ease, background 0.15s ease,
     box-shadow 0.15s ease;
@@ -370,10 +390,16 @@ body.has-bg .scene-svg {
   transform: scale(0.92);
 }
 
+.ctrl.small {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.9rem;
+}
+
 .ctrl.play {
-  width: 3.1rem;
-  height: 3.1rem;
-  font-size: 1.35rem;
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.3rem;
   background: linear-gradient(180deg, #ffd98a, #f0b653);
   border: none;
   color: #3a2a08;
@@ -383,6 +409,145 @@ body.has-bg .scene-svg {
 .ctrl.play:hover {
   background: linear-gradient(180deg, #ffe7ab, #f5c25e);
   box-shadow: 0 8px 30px rgba(255, 199, 110, 0.6);
+}
+
+/* ---------- Volume popover ---------- */
+.volume-wrap {
+  position: relative;
+}
+
+.volume-popover {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  right: -0.4rem;
+  padding: 0.9rem 0.6rem;
+  border-radius: 16px;
+  z-index: 21;
+}
+
+.volume-popover .pb-range {
+  width: 90px;
+}
+
+/* ---------- Song list panel ---------- */
+.list-panel {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 12.5rem);
+  z-index: 15;
+  width: var(--bar-w);
+  max-height: 50vh;
+  border-radius: 22px;
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.5rem 0.6rem;
+  flex: 0 0 auto;
+}
+
+.list-title {
+  font-family: "DM Serif Display", serif;
+  font-size: 1rem;
+  color: var(--gold-soft);
+}
+
+.list-close {
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.1rem 0.4rem;
+}
+
+.list-items {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.list-empty {
+  padding: 1rem 0.5rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.list-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: none;
+  background: transparent;
+  border-radius: 12px;
+  padding: 0.45rem 0.5rem;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.list-item:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.list-item.active {
+  background: rgba(255, 217, 138, 0.14);
+}
+
+.list-item-index {
+  flex: 0 0 auto;
+  width: 1.4rem;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.list-item.active .list-item-index {
+  color: var(--gold);
+}
+
+.list-item-thumb {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.list-item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-item-title {
+  font-size: 0.84rem;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-item-artist {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-item-playing {
+  flex: 0 0 auto;
+  color: var(--gold);
+  font-size: 0.85rem;
 }
 
 /* ---------- YouTube host ---------- */
@@ -417,15 +582,9 @@ body.has-bg .scene-svg {
   }
 
   .player-bar {
-    gap: 0.4rem;
-    padding: 0.45rem 0.55rem;
-    border-radius: 24px;
-  }
-
-  .pb-heart {
-    width: 2.3rem;
-    height: 2.3rem;
-    font-size: 1.05rem;
+    gap: 0.35rem;
+    padding: 0.55rem 0.6rem 0.65rem;
+    border-radius: 22px;
   }
 
   .pb-cover {
@@ -434,32 +593,38 @@ body.has-bg .scene-svg {
     border-radius: 8px;
   }
 
-  .pb-day {
-    font-size: 0.6rem;
-  }
-
   .pb-title {
     font-size: 0.92rem;
   }
 
   .pb-artist {
-    display: none;
+    font-size: 0.7rem;
   }
 
   .pb-note {
-    font-size: 0.66rem;
+    font-size: 0.64rem;
   }
 
   .ctrl {
-    width: 2.1rem;
-    height: 2.1rem;
-    font-size: 0.95rem;
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.88rem;
+  }
+
+  .ctrl.small {
+    width: 1.85rem;
+    height: 1.85rem;
+    font-size: 0.82rem;
   }
 
   .ctrl.play {
-    width: 2.7rem;
-    height: 2.7rem;
-    font-size: 1.15rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    font-size: 1.1rem;
+  }
+
+  .list-panel {
+    bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 13rem);
   }
 
   .top-widget {
@@ -505,7 +670,7 @@ body.has-bg .scene-svg {
     font-size: 0.98rem;
   }
 
-  .playlist {
+  .list-panel {
     max-height: 44vh;
   }
 }
