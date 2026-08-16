@@ -19,6 +19,7 @@ const els = {
 let player = null;
 let isPlaying = false;
 let playlistLength = 0;
+let playerReady = false;
 
 // ---------- Day counter ----------
 function todayIndex() {
@@ -50,6 +51,7 @@ function initPlayer(autoplay) {
 }
 
 function onPlayerReady() {
+  playerReady = true;
   const iframe = player.getIframe
     ? player.getIframe()
     : document.querySelector("#ytPlayer iframe");
@@ -227,3 +229,560 @@ window.onYouTubeIframeAPIReady = onYouTubeIframeAPIReady;
 checkBackground();
 startClock();
 initWeather();
+
+/* =========================================================
+   MEMSAHAB PLAYER — PROGRESS BAR + PLAYLIST LIST
+   ========================================================= */
+
+(function () {
+  let progressBar = null;
+  let currentTimeText = null;
+  let durationText = null;
+  let listPanel = null;
+
+  function formatTime(seconds) {
+    seconds = Math.floor(Number(seconds) || 0);
+
+    const minutes = Math.floor(seconds / 60);
+    const secs = String(seconds % 60).padStart(2, "0");
+
+    return minutes + ":" + secs;
+  }
+
+  function seekBy(seconds) {
+    if (!player || !playerReady) return;
+
+    try {
+      const current = player.getCurrentTime();
+      const duration = player.getDuration();
+
+      player.seekTo(
+        Math.max(0, Math.min(duration, current + seconds)),
+        true
+      );
+    } catch (error) {
+      console.log("Seek error:", error);
+    }
+  }
+
+  function updateProgress() {
+    if (!player || !playerReady || !progressBar) return;
+
+    try {
+      const current = player.getCurrentTime();
+      const duration = player.getDuration();
+
+      if (duration > 0) {
+        progressBar.max = duration;
+        progressBar.value = current;
+
+        if (currentTimeText) {
+          currentTimeText.textContent = formatTime(current);
+        }
+
+        if (durationText) {
+          durationText.textContent = formatTime(duration);
+        }
+      }
+    } catch (error) {
+      // Player may temporarily be unavailable
+    }
+  }
+
+  /* =========================================================
+     CREATE PROGRESS BAR
+     ========================================================= */
+
+  function createProgressControls() {
+
+    if (document.getElementById("memsahab-progress-row")) {
+      return;
+    }
+
+    const playerBar =
+      document.querySelector(".pb-info") ||
+      document.querySelector(".player-info") ||
+      document.querySelector(".now-playing");
+
+    if (!playerBar) {
+      console.log("MemSahab: player info area not found.");
+      return;
+    }
+
+    const row = document.createElement("div");
+
+    row.id = "memsahab-progress-row";
+
+    row.style.cssText = `
+      width:100%;
+      display:flex;
+      align-items:center;
+      gap:6px;
+      margin-top:5px;
+      box-sizing:border-box;
+    `;
+
+    /* ---------- Back 10 ---------- */
+
+    const backButton = document.createElement("button");
+
+    backButton.textContent = "↶10";
+
+    backButton.title = "Back 10 seconds";
+
+    backButton.style.cssText = `
+      border:0;
+      background:transparent;
+      color:rgba(255,255,255,.65);
+      font-size:10px;
+      padding:2px 3px;
+      cursor:pointer;
+    `;
+
+    backButton.onclick = function (event) {
+      event.stopPropagation();
+      seekBy(-10);
+    };
+
+    /* ---------- Current time ---------- */
+
+    currentTimeText = document.createElement("span");
+
+    currentTimeText.textContent = "0:00";
+
+    currentTimeText.style.cssText = `
+      color:rgba(255,255,255,.55);
+      font-size:9px;
+      min-width:28px;
+      text-align:center;
+    `;
+
+    /* ---------- Progress ---------- */
+
+    progressBar = document.createElement("input");
+
+    progressBar.type = "range";
+    progressBar.min = "0";
+    progressBar.max = "100";
+    progressBar.value = "0";
+    progressBar.step = "0.1";
+
+    progressBar.style.cssText = `
+      flex:1;
+      min-width:40px;
+      height:3px;
+      cursor:pointer;
+      accent-color:#ffd98a;
+    `;
+
+    progressBar.addEventListener("input", function () {
+
+      if (!player || !playerReady) return;
+
+      try {
+        player.seekTo(Number(this.value), true);
+      } catch (error) {
+        console.log("Progress seek error:", error);
+      }
+
+    });
+
+    /* ---------- Duration ---------- */
+
+    durationText = document.createElement("span");
+
+    durationText.textContent = "0:00";
+
+    durationText.style.cssText = `
+      color:rgba(255,255,255,.55);
+      font-size:9px;
+      min-width:28px;
+      text-align:center;
+    `;
+
+    /* ---------- Forward 10 ---------- */
+
+    const forwardButton = document.createElement("button");
+
+    forwardButton.textContent = "10↷";
+
+    forwardButton.title = "Forward 10 seconds";
+
+    forwardButton.style.cssText = `
+      border:0;
+      background:transparent;
+      color:rgba(255,255,255,.65);
+      font-size:10px;
+      padding:2px 3px;
+      cursor:pointer;
+    `;
+
+    forwardButton.onclick = function (event) {
+      event.stopPropagation();
+      seekBy(10);
+    };
+
+    row.append(
+      backButton,
+      currentTimeText,
+      progressBar,
+      durationText,
+      forwardButton
+    );
+
+    playerBar.appendChild(row);
+  }
+
+
+  /* =========================================================
+     CREATE LIST BUTTON
+     ========================================================= */
+
+  function createListButton() {
+
+    if (document.getElementById("memsahab-list-button")) {
+      return;
+    }
+
+    const controls =
+      document.querySelector(".pb-controls") ||
+      document.querySelector(".player-controls");
+
+    if (!controls) {
+      console.log("MemSahab: player controls not found.");
+      return;
+    }
+
+    const button = document.createElement("button");
+
+    button.id = "memsahab-list-button";
+
+    button.textContent = "☰ List";
+
+    button.title = "View songs";
+
+    button.style.cssText = `
+      height:34px;
+      padding:0 11px;
+      border-radius:18px;
+      border:1px solid rgba(255,255,255,.15);
+      background:rgba(255,255,255,.08);
+      color:white;
+      cursor:pointer;
+      font-size:11px;
+      white-space:nowrap;
+      margin-right:5px;
+    `;
+
+    button.onclick = function (event) {
+
+      event.stopPropagation();
+
+      if (!listPanel) {
+        createPlaylistPanel();
+      }
+
+      if (listPanel.style.display === "none") {
+
+        listPanel.style.display = "block";
+
+        populatePlaylist();
+
+      } else {
+
+        listPanel.style.display = "none";
+
+      }
+
+    };
+
+    controls.insertBefore(button, controls.firstChild);
+  }
+
+
+  /* =========================================================
+     PLAYLIST PANEL
+     ========================================================= */
+
+  function createPlaylistPanel() {
+
+    listPanel = document.createElement("div");
+
+    listPanel.id = "memsahab-playlist-panel";
+
+    listPanel.style.cssText = `
+      position:fixed;
+      left:50%;
+      bottom:105px;
+      transform:translateX(-50%);
+      width:min(420px,calc(100% - 24px));
+      max-height:55vh;
+      overflow-y:auto;
+      background:rgba(14,10,24,.97);
+      border:1px solid rgba(255,255,255,.14);
+      border-radius:20px;
+      padding:12px;
+      box-sizing:border-box;
+      box-shadow:0 20px 60px rgba(0,0,0,.55);
+      backdrop-filter:blur(20px);
+      -webkit-backdrop-filter:blur(20px);
+      z-index:99999;
+      display:none;
+    `;
+
+    /* ---------- Header ---------- */
+
+    const header = document.createElement("div");
+
+    header.style.cssText = `
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      padding:4px 5px 10px;
+      color:white;
+      font-size:13px;
+      font-weight:600;
+    `;
+
+    const title = document.createElement("span");
+
+    title.textContent = "❤️ Heer Memsahab";
+
+    const closeButton = document.createElement("button");
+
+    closeButton.textContent = "×";
+
+    closeButton.style.cssText = `
+      border:0;
+      background:transparent;
+      color:white;
+      font-size:22px;
+      cursor:pointer;
+      padding:0 5px;
+    `;
+
+    closeButton.onclick = function () {
+      listPanel.style.display = "none";
+    };
+
+    header.append(title, closeButton);
+
+    listPanel.appendChild(header);
+
+    document.body.appendChild(listPanel);
+  }
+
+
+  /* =========================================================
+     LOAD PLAYLIST SONGS
+     ========================================================= */
+
+  function populatePlaylist() {
+
+    if (!player || !listPanel) return;
+
+    try {
+
+      const playlist = player.getPlaylist();
+
+      if (!playlist || !playlist.length) {
+        return;
+      }
+
+      /* Remove old song entries */
+
+      const oldSongs =
+        listPanel.querySelectorAll(".memsahab-song-item");
+
+      oldSongs.forEach(function (song) {
+        song.remove();
+      });
+
+
+      playlist.forEach(function (videoId, index) {
+
+        const item = document.createElement("button");
+
+        item.className = "memsahab-song-item";
+
+        item.style.cssText = `
+          width:100%;
+          display:block;
+          text-align:left;
+          border:0;
+          border-radius:12px;
+          padding:9px;
+          margin:2px 0;
+          background:transparent;
+          color:white;
+          cursor:pointer;
+          box-sizing:border-box;
+        `;
+
+        item.innerHTML = `
+          <div style="
+            color:#ffd98a;
+            font-size:9px;
+            margin-bottom:2px;
+          ">
+            DAY ${String(index + 1).padStart(2, "0")}
+          </div>
+
+          <div class="memsahab-song-title" style="
+            font-size:12px;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+          ">
+            Loading song...
+          </div>
+        `;
+
+
+        item.onmouseenter = function () {
+          item.style.background =
+            "rgba(255,255,255,.08)";
+        };
+
+        item.onmouseleave = function () {
+          item.style.background =
+            "transparent";
+        };
+
+
+        item.onclick = function () {
+
+          try {
+
+            player.playVideoAt(index);
+
+            listPanel.style.display = "none";
+
+          } catch (error) {
+
+            console.log(
+              "Could not play selected song:",
+              error
+            );
+
+          }
+
+        };
+
+
+        listPanel.appendChild(item);
+
+
+        /* Get YouTube title */
+
+        fetch(
+          "https://www.youtube.com/oembed?url=" +
+          encodeURIComponent(
+            "https://www.youtube.com/watch?v=" + videoId
+          ) +
+          "&format=json"
+        )
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (data) {
+
+          const titleElement =
+            item.querySelector(
+              ".memsahab-song-title"
+            );
+
+          if (titleElement) {
+            titleElement.textContent =
+              data.title || "Untitled Song";
+          }
+
+        })
+        .catch(function () {
+
+          const titleElement =
+            item.querySelector(
+              ".memsahab-song-title"
+            );
+
+          if (titleElement) {
+            titleElement.textContent =
+              "Song " + (index + 1);
+          }
+
+        });
+
+      });
+
+    } catch (error) {
+
+      console.log(
+        "Could not load playlist:",
+        error
+      );
+
+    }
+
+  }
+
+
+  /* =========================================================
+     INITIALIZE EXTRA CONTROLS
+     ========================================================= */
+
+  function initializeMemsahabControls() {
+
+    createProgressControls();
+
+    createListButton();
+
+  }
+
+
+  /* =========================================================
+     WAIT FOR PLAYER UI
+     ========================================================= */
+
+  window.addEventListener("load", function () {
+
+    let attempts = 0;
+
+    const timer = setInterval(function () {
+
+      attempts++;
+
+      initializeMemsahabControls();
+
+      if (
+        document.getElementById(
+          "memsahab-progress-row"
+        ) &&
+        document.getElementById(
+          "memsahab-list-button"
+        )
+      ) {
+
+        clearInterval(timer);
+
+      }
+
+      if (attempts > 30) {
+        clearInterval(timer);
+      }
+
+    }, 500);
+
+  });
+
+
+  /* =========================================================
+     UPDATE PROGRESS EVERY HALF SECOND
+     ========================================================= */
+
+  setInterval(function () {
+
+    updateProgress();
+
+  }, 500);
+
+})();
