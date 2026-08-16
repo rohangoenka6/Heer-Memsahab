@@ -35,6 +35,9 @@ function initPlayer(autoplay) {
       rel: 0,
       fs: 0,
       iv_load_policy: 3,
+      playsinline: 1,
+      enablejsapi: 1,
+      origin: "https://rohangoenka6.github.io",
       listType: "playlist",
       list: PLAYLIST_ID,
     },
@@ -82,18 +85,6 @@ function onPlayerError(e) {
   } else {
     els.songNote.textContent = "\u26a0\ufe0f Playback error (code " + code + ")";
   }
-}
-
-function onPlayerReady() {
-  const list = player.getPlaylist ? player.getPlaylist() : [];
-  if (list && list.length) {
-    playlistLength = list.length;
-    const start = todayIndex() % playlistLength;
-    if (start > 0) {
-      player.playVideoAt(start);
-    }
-  }
-  updateFromVideo();
 }
 
 // Show the real song name, artist and cover straight from YouTube
