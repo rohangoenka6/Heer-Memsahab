@@ -18,7 +18,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Poppins:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=20" />
+    <link rel="stylesheet" href="styles.css?v=21" />
   </head>
   <body>
     <!-- Night scene background -->
@@ -180,11 +180,14 @@
     <!-- Compact player (devipaksha-style) -->
     <div class="player-wrap" id="playerWrap">
       <div class="player-top">
-        <button class="pill" id="listBtn" aria-label="Open playlist">
+        <button class="pill pill-current" id="listBtn" aria-label="Current playlist: Heer Memsahab. Open playlists.">
           <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zm16 0v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4z" />
           </svg>
-          <span class="pill-label">Playlist</span>
+          <span class="pill-col">
+            <span class="pill-tag">Current playlist</span>
+            <span class="pill-name">Heer Memsahab</span>
+          </span>
           <span class="pill-count" id="listCount"></span>
           <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M7 10l5 5 5-5z" />
@@ -257,6 +260,6 @@
 
     <!-- YouTube IFrame API -->
     <script src="https://www.youtube.com/iframe_api"></script>
-    <script src="script.js?v=24"></script>
+    <script src="script.js?v=25"></script>
   </body>
 </html>
