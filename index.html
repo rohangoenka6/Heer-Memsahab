@@ -18,7 +18,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Poppins:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=19" />
+    <link rel="stylesheet" href="styles.css?v=20" />
   </head>
   <body>
     <!-- Night scene background -->
@@ -166,47 +166,89 @@
     <div class="list-panel glass" id="listPanel" hidden>
       <div class="list-header">
         <span class="list-title">❤️ Playlist</span>
-        <button class="list-close" id="listCloseBtn" aria-label="Close list">×</button>
+        <button class="list-close" id="listCloseBtn" aria-label="Close list">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+          </svg>
+        </button>
       </div>
       <div class="list-items" id="listItems">
         <div class="list-empty" id="listEmpty">Loading songs…</div>
       </div>
     </div>
 
-    <!-- Bottom player bar -->
-    <div class="player-bar glass" id="playerBar">
-      <div class="pb-top">
-        <img class="pb-cover" id="songCover" alt="Song cover" />
-        <div class="pb-info">
-          <div class="pb-title" id="songTitle">Loading playlist…</div>
-          <div class="pb-artist" id="songArtist">&nbsp;</div>
-        </div>
-        <div class="pb-top-actions">
-          <div class="volume-wrap">
-            <button class="ctrl small" id="volBtn" aria-label="Volume">🔊</button>
-            <div class="volume-popover glass" id="volumePopover" hidden>
-              <input type="range" id="volumeSlider" class="pb-range" min="0" max="100" value="70" aria-label="Volume level" />
-            </div>
+    <!-- Compact player (devipaksha-style) -->
+    <div class="player-wrap" id="playerWrap">
+      <div class="player-top">
+        <button class="pill" id="listBtn" aria-label="Open playlist">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zm16 0v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4z" />
+          </svg>
+          <span class="pill-label">Playlist</span>
+          <span class="pill-count" id="listCount"></span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 10l5 5 5-5z" />
+          </svg>
+        </button>
+        <div class="vol-wrap">
+          <button class="pill" id="volBtn" aria-label="Volume">
+            <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+            </svg>
+            <span class="pill-vol" id="volLabel">70</span>
+          </button>
+          <div class="volume-popover glass" id="volumePopover" hidden>
+            <input type="range" id="volumeSlider" class="pb-range" min="0" max="100" value="70" aria-label="Volume level" />
           </div>
-          <button class="ctrl small" id="listBtn" aria-label="Open song list">☰</button>
         </div>
       </div>
 
-      <div class="pb-progress-row">
-        <span class="pb-time" id="curTime">0:00</span>
-        <input type="range" id="progressBar" class="pb-range" min="0" max="100" value="0" step="0.1" aria-label="Seek" />
-        <span class="pb-time" id="durTime">0:00</span>
+      <div class="player-card glass">
+        <img class="pc-cover" id="songCover" alt="Song cover" />
+        <div class="pc-mid">
+          <div class="pc-title" id="songTitle">Loading playlist…</div>
+          <div class="pc-artist" id="songArtist">&nbsp;</div>
+          <div class="pc-progress">
+            <span class="pc-time" id="curTime">0:00</span>
+            <input type="range" id="progressBar" class="pb-range" min="0" max="100" value="0" step="0.1" aria-label="Seek" />
+            <span class="pc-time" id="durTime">0:00</span>
+          </div>
+        </div>
+        <div class="pc-controls">
+          <button class="pc-btn" id="back10Btn" aria-label="Back 10 seconds">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+              <text x="12" y="15.5" text-anchor="middle" font-size="5.5" fill="currentColor">10</text>
+            </svg>
+          </button>
+          <button class="pc-btn" id="prevBtn" aria-label="Previous song">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
+            </svg>
+          </button>
+          <button class="pc-btn pc-play" id="playBtn" aria-label="Play or pause">
+            <svg id="playIco" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            <svg id="pauseIco" viewBox="0 0 24 24" aria-hidden="true" hidden>
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+            </svg>
+          </button>
+          <button class="pc-btn" id="nextBtn" aria-label="Next song">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+            </svg>
+          </button>
+          <button class="pc-btn" id="fwd10Btn" aria-label="Forward 10 seconds">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 13c0 3.31-2.69 6-6 6s-6-2.69-6-6 2.69-6 6-6v4l5-5-5-5v4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8h-2z" />
+              <text x="12" y="15.5" text-anchor="middle" font-size="5.5" fill="currentColor">10</text>
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <div class="pb-controls-row">
-        <button class="ctrl" id="back10Btn" aria-label="Back 10 seconds">↺10</button>
-        <button class="ctrl" id="prevBtn" aria-label="Previous song">⏮</button>
-        <button class="ctrl play" id="playBtn" aria-label="Play or pause">▶</button>
-        <button class="ctrl" id="nextBtn" aria-label="Next song">⏭</button>
-        <button class="ctrl" id="fwd10Btn" aria-label="Forward 10 seconds">10↻</button>
-      </div>
-
-      <div class="pb-note" id="songNote">For you, always ❤️</div>
+      <div class="pc-note" id="songNote">For you, always ❤️</div>
     </div>
 
     <div class="yt-holder">
@@ -215,6 +257,6 @@
 
     <!-- YouTube IFrame API -->
     <script src="https://www.youtube.com/iframe_api"></script>
-    <script src="script.js?v=23"></script>
+    <script src="script.js?v=24"></script>
   </body>
 </html>

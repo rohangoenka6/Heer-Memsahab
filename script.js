@@ -6,8 +6,8 @@
 //  automatically — nothing in this file needs to change.
 // ============================================================
 
-const PLAYLIST_ID = "PLWy_M1Gs9zY8";
-const START_VIDEO_ID = "LUgpPmj6nR8"; // fallback if the playlist is slow to load
+const PLAYLIST_ID = "PLM5gSMwj4EUM";
+const START_VIDEO_ID = "SESYUUrwtzc"; // fallback if the playlist is slow to load
 
 // ============================================================
 // Elements
@@ -18,6 +18,8 @@ const els = {
   songNote: document.getElementById("songNote"),
   songCover: document.getElementById("songCover"),
   playBtn: document.getElementById("playBtn"),
+  playIco: document.getElementById("playIco"),
+  pauseIco: document.getElementById("pauseIco"),
   prevBtn: document.getElementById("prevBtn"),
   nextBtn: document.getElementById("nextBtn"),
   back10Btn: document.getElementById("back10Btn"),
@@ -26,9 +28,11 @@ const els = {
   curTime: document.getElementById("curTime"),
   durTime: document.getElementById("durTime"),
   volBtn: document.getElementById("volBtn"),
+  volLabel: document.getElementById("volLabel"),
   volumePopover: document.getElementById("volumePopover"),
   volumeSlider: document.getElementById("volumeSlider"),
   listBtn: document.getElementById("listBtn"),
+  listCount: document.getElementById("listCount"),
   listPanel: document.getElementById("listPanel"),
   listCloseBtn: document.getElementById("listCloseBtn"),
   listItems: document.getElementById("listItems"),
@@ -163,6 +167,7 @@ function onPlaylistReady(ids) {
   if (playlistResolved) return;
   playlistResolved = true;
   playlistIds = ids.slice();
+  if (els.listCount) els.listCount.textContent = String(ids.length);
   buildListPanel();
   setTitle("Ready to play", "Tap \u25b6 to begin");
   maybeAutoPlay();
@@ -280,7 +285,8 @@ function maybeAutoPlay() {
 }
 
 function setPlayBtn(playing) {
-  els.playBtn.textContent = playing ? "\u23f8" : "\u25b6";
+  if (els.playIco) els.playIco.hidden = playing;
+  if (els.pauseIco) els.pauseIco.hidden = !playing;
 }
 
 function setTitle(title, artist) {
@@ -412,7 +418,10 @@ els.progressBar.addEventListener("pointerdown", function () {
 });
 
 els.progressBar.addEventListener("input", function () {
-  els.curTime.textContent = formatTime(els.progressBar.value);
+  const v = Number(els.progressBar.value);
+  const max = Number(els.progressBar.max) || 100;
+  els.curTime.textContent = formatTime(v);
+  els.progressBar.style.setProperty("--range-pct", (max > 0 ? (v / max) * 100 : 0) + "%");
 });
 
 els.progressBar.addEventListener("change", function () {
@@ -434,6 +443,10 @@ function pollProgress() {
     if (duration > 0) {
       els.progressBar.max = duration;
       els.progressBar.value = current;
+      els.progressBar.style.setProperty(
+        "--range-pct",
+        (current / duration) * 100 + "%"
+      );
       els.curTime.textContent = formatTime(current);
       els.durTime.textContent = formatTime(duration);
     }
@@ -446,12 +459,6 @@ setInterval(pollProgress, 250);
 // ============================================================
 // Volume
 // ============================================================
-function volumeIcon(v) {
-  if (v <= 0) return "\ud83d\udd07";
-  if (v < 50) return "\ud83d\udd09";
-  return "\ud83d\udd0a";
-}
-
 els.volBtn.addEventListener("click", function (ev) {
   ev.stopPropagation();
   els.volumePopover.hidden = !els.volumePopover.hidden;
@@ -469,7 +476,7 @@ document.addEventListener("click", function (ev) {
 
 els.volumeSlider.addEventListener("input", function () {
   const v = Number(els.volumeSlider.value);
-  els.volBtn.textContent = volumeIcon(v);
+  if (els.volLabel) els.volLabel.textContent = String(v);
   if (playerReady) {
     try {
       player.setVolume(v);
