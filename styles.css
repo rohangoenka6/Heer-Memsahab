@@ -14,6 +14,11 @@
   padding: 0;
 }
 
+button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
 html,
 body {
   height: 100%;
@@ -434,7 +439,7 @@ body.has-bg .scene-svg {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 12.5rem);
+  bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 14.5rem);
   z-index: 15;
   width: var(--bar-w);
   max-height: 50vh;
